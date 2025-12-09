@@ -5,6 +5,8 @@ import csv # Necesario para exportar los logs
 import os # Necesario para manejar rutas de archivos
 from playwright.async_api import Page, TimeoutError, Locator # Importamos Page, TimeoutError, Locator
 from modelos_datos import FacturaEndesaCliente # Importamos la clase modelo de datos (asumiendo que existe)
+# IMPORTACIÓN DEL PARSER XML
+from xml_parser import procesar_xml_local 
 
 # --- CONSTANTES DE ENDESA ---
 URL_LOGIN = "https://endesa-atenea.my.site.com/miempresa/s/login/?language=es" 
@@ -70,14 +72,29 @@ async def _extraer_texto_de_td(td: Locator) -> str:
         return ""
 
 def _exportar_log_csv(facturas: list[FacturaEndesaCliente], filepath: str):
-    """Exporta la metadata de las facturas extraídas a un archivo CSV."""
+    """
+    Exporta TODA la metadata y datos detallados de las facturas 
+    extraídas (incluyendo el parseo XML) a un archivo CSV.
+    """
+    # Usamos los campos de la dataclass FacturaEndesaCliente (extraídos de la clase original)
     fieldnames = [
-        'numero_factura', 'cups', 'fecha_emision', 'fecha_inicio_periodo', 
-        'fecha_fin_periodo', 'importe_total_tabla', 'contrato', 'secuencial',
-        'estado_factura', 'fraccionamiento', 'tipo_factura', 
-        'url_descarga_pdf', 'url_descarga_html', 'url_descarga_xml'
+        # Metadata de la tabla
+        'fecha_emision', 'numero_factura', 'fecha_inicio_periodo', 'fecha_fin_periodo', 
+        'importe_total_tabla', 'contrato', 'cups', 'secuencial', 'estado_factura', 
+        'fraccionamiento', 'tipo_factura', 'descarga_selector',
+        # Datos detallados (XML/OCR)
+        'mes_facturado', 'tarifa', 'direccion_suministro', 
+        'potencia_p1', 'potencia_p2', 'potencia_p3', 'potencia_p4', 
+        'potencia_p5', 'potencia_p6', 'importe_de_potencia', 'num_dias', 
+        'consumo_kw_p1', 'consumo_kw_p2', 'consumo_kw_p3', 'consumo_kw_p4', 
+        'consumo_kw_p5', 'consumo_kw_p6', 'kw_totales', 'importe_consumo', 
+        'importe_bono_social', 'importe_impuesto_electrico', 'importe_alquiler_equipos', 
+        'importe_otros_conceptos', 'importe_exceso_potencia', 'importe_reactiva', 
+        'importe_base_imponible', 'importe_facturado', 'fecha_de_vencimiento', 
+        'importe_total_final', 'fecha_de_cobro_en_banco'
     ]
     
+    # Creamos un diccionario para cada factura con todos los campos
     data_to_write = [{key: getattr(f, key, '') for key in fieldnames} for f in facturas]
 
     try:
@@ -111,12 +128,13 @@ async def _wait_for_data_load(page: Page, timeout: int = 20000):
     # print("   -> Datos de la página cargados y estables.") # Reducimos el output
 
 
-# --- LÓGICA DE DESCARGA LOCAL Y EXTRACCIÓN ---
+# --- LÓGICA DE DESCARGA LOCAL Y EXTRACCIÓN (CON INTEGRACIÓN DE PARSER) ---
 
-async def _descargar_archivo_fila(page: Page, row_locator: Locator, factura: FacturaEndesaCliente, doc_type: str):
+async def _descargar_archivo_fila(page: Page, row_locator: Locator, factura: FacturaEndesaCliente, doc_type: str) -> str | None:
     """
     Intenta descargar un tipo de archivo (PDF, XML, HTML) haciendo clic en el botón de la fila
-    y guardándolo localmente en la carpeta designada.
+    y guardándolo localmente.
+    Retorna la ruta completa del archivo guardado o None si falla.
     """
     
     doc_type = doc_type.upper() # PDF, XML, HTML
@@ -124,20 +142,17 @@ async def _descargar_archivo_fila(page: Page, row_locator: Locator, factura: Fac
     if doc_type == 'PDF':
         button_col_index = 13
         file_ext = 'pdf'
-        # Usamos el valor del atributo (descarga_selector) para el locator, ya que el texto no es único.
         button_locator_selector = f'button[value*="{factura.descarga_selector}"]' 
     elif doc_type == 'HTML':
         button_col_index = 12
         file_ext = 'html'
-        # Usamos el texto visible 'HTML'
         button_locator_selector = 'button:has-text("HTML")' 
     elif doc_type == 'XML':
         button_col_index = 11
         file_ext = 'xml'
-        # Usamos el texto visible '@' (asumimos que es el que activa el XML/Digital)
         button_locator_selector = 'button:has-text("@")' 
     else:
-        return False
+        return None
 
     try:
         # 1. Localizar el botón de descarga
@@ -160,20 +175,20 @@ async def _descargar_archivo_fila(page: Page, row_locator: Locator, factura: Fac
         
         print(f"   -> [DESCARGA {doc_type}] Guardado en: {save_path}")
         
-        return True
+        return save_path
         
     except TimeoutError:
         print(f"   -> [ADVERTENCIA {doc_type}] Timeout (30s) al hacer clic o iniciar la descarga. Omitiendo.")
-        return False
+        return None
     except Exception as e:
         print(f"   -> [ERROR {doc_type}] Fallo inesperado en la descarga: {e}")
-        return False
+        return None
 
 
 async def _extraer_pagina_actual(page: Page) -> list[FacturaEndesaCliente]:
     """
     Extrae los datos de todas las filas visibles en la página actual de la tabla de resultados.
-    Esta función también activa la descarga local.
+    Esta función también activa la descarga local e INTEGRA EL PARSEO XML.
     """
     facturas_pagina: list[FacturaEndesaCliente] = []
     rows = page.locator('table#example1 tbody tr')
@@ -192,7 +207,13 @@ async def _extraer_pagina_actual(page: Page) -> list[FacturaEndesaCliente]:
         try:
             # Extracción de metadata
             pdf_button = tds.nth(13).locator('button')
-            pdf_value = await pdf_button.get_attribute("value") or ""
+            # Usamos get_attribute directamente en el td para evitar fallos si el botón no está visible
+            pdf_value = await tds.nth(13).locator('button').get_attribute("value") or ""
+            xml_id_value = await tds.nth(11).locator('button').get_attribute('id') or ""
+            html_values = {
+                'id': await tds.nth(12).locator('button').get_attribute('id') or "",
+                'cups': await tds.nth(12).locator('button').get_attribute('value') or ""
+            }
             
             # 1. Crear instancia de Factura (solo metadata)
             factura = FacturaEndesaCliente(
@@ -209,16 +230,23 @@ async def _extraer_pagina_actual(page: Page) -> list[FacturaEndesaCliente]:
                 tipo_factura=await _extraer_texto_de_td(tds.nth(10)),
                 
                 descarga_selector=pdf_value, 
-                url_descarga_pdf=BASE_URL + pdf_value if pdf_value.startswith('/') else BASE_URL + '/...',
-                url_descarga_html=f"{BASE_URL}/html-visor?id={await tds.nth(12).locator('button').get_attribute('id')}&cups={await tds.nth(12).locator('button').get_attribute('value')}",
-                url_descarga_xml=f"{BASE_URL}/xml-download?id={await tds.nth(11).locator('button').get_attribute('id')}", 
+                # url_descarga_pdf=BASE_URL + pdf_value if pdf_value.startswith('/') else BASE_URL + '/...',
+                # url_descarga_html=f"{BASE_URL}/html-visor?id={html_values['id']}&cups={html_values['cups']}",
+                # url_descarga_xml=f"{BASE_URL}/xml-download?id={xml_id_value}", 
             )
             
             # 2. Descargar localmente los 3 archivos
             print(f"[INFO] Iniciando descarga para {factura.numero_factura} ({factura.cups})...")
+            
+            # Solo necesitamos la ruta del XML para el parseo
+            xml_save_path = await _descargar_archivo_fila(page, row, factura, 'XML')
             await _descargar_archivo_fila(page, row, factura, 'PDF')
-            await _descargar_archivo_fila(page, row, factura, 'XML')
             await _descargar_archivo_fila(page, row, factura, 'HTML')
+            
+            # 3. INTEGRACIÓN DEL PARSEO XML: Si el XML se descargó, lo procesamos.
+            if xml_save_path:
+                print(f"[INFO] Procesando XML para {factura.numero_factura}...")
+                procesar_xml_local(factura, xml_save_path)
             
             facturas_pagina.append(factura)
             
@@ -433,8 +461,9 @@ async def realizar_busqueda_facturas(page: Page, grupo_empresarial: str, cups: s
 
 async def ejecutar_robot() -> list:
     """
-    Función principal que orquesta el robot completo: login, búsqueda y lectura de datos.
-    Retorna la lista de FacturaEndesaCliente con la metadata extraída.
+    Función principal que orquesta el robot completo: login, búsqueda, lectura de datos
+    y parseo XML.
+    Retorna la lista de FacturaEndesaCliente con la metadata y los datos detallados extraídos.
     """
     robot = NavegadorAsync()
     facturas_extraidas = []
@@ -475,12 +504,13 @@ async def ejecutar_robot() -> list:
         await realizar_busqueda_facturas(page, GRUPO_EMPRESARIAL, TEST_CUPS, FECHA_DESDE, FECHA_HASTA)
         
         # 4. Extracción de datos de la tabla (Paginación incluida)
+        # ESTA FUNCIÓN AHORA INCLUYE LA DESCARGA Y EL PARSEO XML
         facturas_metadata = await leer_tabla_facturas(page) 
         facturas_extraidas = facturas_metadata
 
-        # 5. Log y Resumen (Corrección del Output)
+        # 5. Log y Resumen 
         
-        # 5.1. Exportar a CSV (Log)
+        # 5.1. Exportar a CSV (Log con TODOS los campos)
         if facturas_metadata:
             log_filepath_dynamic = LOG_FILE_NAME_TEMPLATE.format(cups=TEST_CUPS)
             _exportar_log_csv(facturas_metadata, log_filepath_dynamic)
@@ -488,25 +518,25 @@ async def ejecutar_robot() -> list:
         # 5.2. Imprimir resumen detallado en consola
         if facturas_extraidas:
             print("\n========================================================")
-            print(f"RESUMEN FINAL DE {len(facturas_extraidas)} FACTURAS LEÍDAS DE LA TABLA:")
+            print(f"RESUMEN FINAL DE {len(facturas_extraidas)} FACTURAS LEÍDAS DE LA TABLA Y PARSEADAS CON XML:")
             print("========================================================")
             
-            # Campos que queremos mostrar en el resumen de la consola
+            # Campos clave para el resumen de consola (Metadata + Datos XML)
             campos_a_mostrar = [
-                'numero_factura', 'cups', 'fecha_emision', 
-                'importe_total_tabla', 'contrato', 'descarga_selector'
+                'numero_factura', 'cups', 'fecha_emision', 'importe_total_tabla', 
+                'importe_total_final', 'kw_totales', 'tarifa', 'direccion_suministro', 
+                'importe_base_imponible', 'importe_impuesto_electrico', 'importe_alquiler_equipos'
             ]
 
             for f in facturas_extraidas:
-                status = "METADATA OK" 
+                status = "COMPLETO (XML)" if f.importe_total_final else "SOLO METADATA"
                 print(f"--- Factura: {f.numero_factura} (Estado: {status}) ---")
                 
-                # Iterar sobre los atributos de la dataclass y solo mostrar los de la tabla
-                for field in ['numero_factura', 'cups', 'fecha_emision', 'fecha_inicio_periodo', 'fecha_fin_periodo', 'importe_total_tabla', 'contrato', 'descarga_selector']:
+                for field in campos_a_mostrar:
                     value = getattr(f, field)
                     if value is not None and value != "" and value != 0.0:
-                        print(f"| {field.replace('_', ' ').title().ljust(20)}: {value}")
-                print("-" * 30)
+                        print(f"| {field.replace('_', ' ').title().ljust(25)}: {value}")
+                print("-" * 35)
             
             print("========================================================\n")
         
@@ -534,7 +564,7 @@ if __name__ == "__main__":
         
         # Se asume que si la lista no está vacía, la extracción fue un éxito
         if facturas:
-            print(f"\nRESULTADO FINAL: ✅ {len(facturas)} facturas preparadas para n8n.")
+            print(f"\nRESULTADO FINAL: ✅ {len(facturas)} facturas preparadas (Metadata + XML Data).")
         else:
             print("\nRESULTADO FINAL: ❌ No se encontraron facturas para el filtro actual.")
 

@@ -30,9 +30,9 @@ class FacturaEndesaCliente:
     descarga_selector: str
     
     # URL completa para el HTML y XML (si existen)
-    url_descarga_pdf: str | None = None
-    url_descarga_html: str | None = None 
-    url_descarga_xml: str | None = None
+    # url_descarga_pdf: str | None = None
+    # url_descarga_html: str | None = None 
+    # url_descarga_xml: str | None = None
     
     # === 3. Datos DETALLADOS extraídos del PDF/XML/HTML (Solo disponibles después del OCR/Procesamiento) ===
     
@@ -59,6 +59,20 @@ class FacturaEndesaCliente:
     consumo_kw_p5: float | None = None
     consumo_kw_p6: float | None = None
     kw_totales: float | None = None
+
+    importe_consumo_p1: float | None = None
+    importe_consumo_p2: float | None = None
+    importe_consumo_p3: float | None = None
+    importe_consumo_p4: float | None = None
+    importe_consumo_p5: float | None = None
+    importe_consumo_p6: float | None = None
+
+    energia_precio_indexado_p1: float | None = None
+    energia_precio_indexado_p2: float | None = None
+    energia_precio_indexado_p3: float | None = None
+    energia_precio_indexado_p4: float | None = None
+    energia_precio_indexado_p5: float | None = None
+    energia_precio_indexado_p6: float | None = None
     importe_consumo: float | None = None
     
     # Impuestos, conceptos y totales
@@ -66,7 +80,15 @@ class FacturaEndesaCliente:
     importe_impuesto_electrico: float | None = None
     importe_alquiler_equipos: float | None = None
     importe_otros_conceptos: float | None = None
+
+    importe_exceso_potencia_p1: float | None = None
+    importe_exceso_potencia_p2: float | None = None
+    importe_exceso_potencia_p3: float | None = None
+    importe_exceso_potencia_p4: float | None = None
+    importe_exceso_potencia_p5: float | None = None
+    importe_exceso_potencia_p6: float | None = None
     importe_exceso_potencia: float | None = None
+    
     importe_reactiva: float | None = None
     importe_base_imponible: float | None = None
     
@@ -78,5 +100,5 @@ class FacturaEndesaCliente:
     
     # === 4. Contenido Binario (Para la API) ===
     
-    data_base64: str | None = None
-    archivo_nombre: str | None = None
+    # data_base64: str | None = None
+    # archivo_nombre: str | None = None
