@@ -1,4 +1,4 @@
-from navegador import NavegadorAsync # Importamos la clase base del navegador
+from navegador import NavegadorAsync, TEMP_DOWNLOAD_ROOT # Importamos la clase base y la ruta de descarga
 import asyncio
 import re
 import csv # Necesario para exportar los logs
@@ -29,8 +29,19 @@ TEST_CUPS = "ES0034111300275021NX0F"
 # Selector que aparece SÓLO después de un login exitoso (El botón de cookies)
 SUCCESS_INDICATOR_SELECTOR = '#truste-consent-button' 
 
-# --- CONSTANTE DE LOGGING ---
+# --- CONSTANTE DE LOGGING Y CARPETAS DE DESCARGA ---
 LOG_FILE_NAME_TEMPLATE = "facturas_endesa_log_{cups}.csv"
+
+# Definición de las subcarpetas usando la constante TEMP_DOWNLOAD_ROOT de navegador.py
+DOWNLOAD_FOLDERS = {
+    'PDF': os.path.join(TEMP_DOWNLOAD_ROOT, 'Facturas_Endesa_PDFs'),
+    'XML': os.path.join(TEMP_DOWNLOAD_ROOT, 'Facturas_Endesa_XMLs'),
+    'HTML': os.path.join(TEMP_DOWNLOAD_ROOT, 'Facturas_Endesa_HTMLs')
+}
+# Aseguramos que todas las carpetas existan
+for folder in DOWNLOAD_FOLDERS.values():
+    os.makedirs(folder, exist_ok=True)
+print(f"[INFO] Carpetas de descarga configuradas en: {TEMP_DOWNLOAD_ROOT}")
 
 
 # --- FUNCIONES DE UTILIDAD PARA EXTRACCIÓN Y LOGGING ---
@@ -59,15 +70,12 @@ async def _extraer_texto_de_td(td: Locator) -> str:
         return ""
 
 def _exportar_log_csv(facturas: list[FacturaEndesaCliente], filepath: str):
-    """
-    Exporta la metadata de las facturas extraídas a un archivo CSV.
-    """
-    # Definimos las cabeceras del CSV (solo las propiedades de la tabla)
+    """Exporta la metadata de las facturas extraídas a un archivo CSV."""
     fieldnames = [
         'numero_factura', 'cups', 'fecha_emision', 'fecha_inicio_periodo', 
         'fecha_fin_periodo', 'importe_total_tabla', 'contrato', 'secuencial',
         'estado_factura', 'fraccionamiento', 'tipo_factura', 
-        'url_descarga_pdf', 'url_descarga_html', 'url_descarga_xml' # Incluimos URLs completas
+        'url_descarga_pdf', 'url_descarga_html', 'url_descarga_xml'
     ]
     
     data_to_write = [{key: getattr(f, key, '') for key in fieldnames} for f in facturas]
@@ -86,32 +94,86 @@ def _exportar_log_csv(facturas: list[FacturaEndesaCliente], filepath: str):
 async def _wait_for_data_load(page: Page, timeout: int = 20000):
     """
     Espera a que los datos dinámicos de la primera fila estén cargados y estables.
-    Verifica que la celda de Importe (columna 5) y Estado (columna 9) no contengan 'Cargando'.
     """
-    # Selector de la celda de Importe de la primera fila
     importe_cell_selector = 'table#example1 tbody tr:nth-child(1) td:nth-child(5)'
+    estado_cell_selector = 'table#example1 tbody tr:nth-child(1) td:nth-child(9)'
     
-    # CRÍTICO: Esperamos a que la celda de la primera fila YA NO contenga 'Cargando...'
     await page.locator(importe_cell_selector).filter(
         has_not_text=re.compile(r"(Cargando|\.\.\.)", re.IGNORECASE)
     ).wait_for(state="visible", timeout=timeout)
     
-    # 2. Espera crítica en el ESTADO (donde viste "Cargando...")
-    estado_cell_selector = 'table#example1 tbody tr:nth-child(1) td:nth-child(9)'
     await page.locator(estado_cell_selector).filter(
         has_not_text=re.compile(r"(Cargando|\.\.\.)", re.IGNORECASE)
     ).wait_for(state="visible", timeout=timeout)
     
-    # 3. Espera extra defensiva: Se espera a que el indicador de paginación esté visible/estable.
     await page.locator('span.pagination-flex-central').wait_for(state="visible", timeout=5000)
     
-    print("   -> Datos de la página cargados y estables.")
+    # print("   -> Datos de la página cargados y estables.") # Reducimos el output
 
-# --- LÓGICA DE EXTRACCIÓN ---
+
+# --- LÓGICA DE DESCARGA LOCAL Y EXTRACCIÓN ---
+
+async def _descargar_archivo_fila(page: Page, row_locator: Locator, factura: FacturaEndesaCliente, doc_type: str):
+    """
+    Intenta descargar un tipo de archivo (PDF, XML, HTML) haciendo clic en el botón de la fila
+    y guardándolo localmente en la carpeta designada.
+    """
+    
+    doc_type = doc_type.upper() # PDF, XML, HTML
+    
+    if doc_type == 'PDF':
+        button_col_index = 13
+        file_ext = 'pdf'
+        # Usamos el valor del atributo (descarga_selector) para el locator, ya que el texto no es único.
+        button_locator_selector = f'button[value*="{factura.descarga_selector}"]' 
+    elif doc_type == 'HTML':
+        button_col_index = 12
+        file_ext = 'html'
+        # Usamos el texto visible 'HTML'
+        button_locator_selector = 'button:has-text("HTML")' 
+    elif doc_type == 'XML':
+        button_col_index = 11
+        file_ext = 'xml'
+        # Usamos el texto visible '@' (asumimos que es el que activa el XML/Digital)
+        button_locator_selector = 'button:has-text("@")' 
+    else:
+        return False
+
+    try:
+        # 1. Localizar el botón de descarga
+        button_locator = row_locator.locator(f'td').nth(button_col_index).locator(button_locator_selector)
+        
+        # 2. Definir la ruta de guardado local
+        target_folder = DOWNLOAD_FOLDERS[doc_type]
+        # Formato de nombre: [CUPS]_[Nº Factura].[ext]
+        filename = f"{factura.cups}_{factura.numero_factura}.{file_ext}"
+        save_path = os.path.join(target_folder, filename)
+        
+        # 3. Interceptar la descarga y hacer clic
+        async with page.expect_download(timeout=30000) as download_info:
+            await button_locator.click(timeout=10000)
+            
+        download = await download_info.value
+        
+        # 4. Guardar el archivo localmente
+        await download.save_as(save_path)
+        
+        print(f"   -> [DESCARGA {doc_type}] Guardado en: {save_path}")
+        
+        return True
+        
+    except TimeoutError:
+        print(f"   -> [ADVERTENCIA {doc_type}] Timeout (30s) al hacer clic o iniciar la descarga. Omitiendo.")
+        return False
+    except Exception as e:
+        print(f"   -> [ERROR {doc_type}] Fallo inesperado en la descarga: {e}")
+        return False
+
 
 async def _extraer_pagina_actual(page: Page) -> list[FacturaEndesaCliente]:
     """
     Extrae los datos de todas las filas visibles en la página actual de la tabla de resultados.
+    Esta función también activa la descarga local.
     """
     facturas_pagina: list[FacturaEndesaCliente] = []
     rows = page.locator('table#example1 tbody tr')
@@ -128,23 +190,12 @@ async def _extraer_pagina_actual(page: Page) -> list[FacturaEndesaCliente]:
         tds = row.locator('td')
         
         try:
-            # Col 13: Botón PDF. El valor 'value' es la URL parcial
+            # Extracción de metadata
             pdf_button = tds.nth(13).locator('button')
             pdf_value = await pdf_button.get_attribute("value") or ""
             
-            pdf_url = BASE_URL + pdf_value if pdf_value.startswith('/') else BASE_URL + '/...'
-
-            html_button = tds.nth(12).locator('button')
-            html_id = await html_button.get_attribute("id") or ""
-            html_value = await html_button.get_attribute("value") or ""
-            
-            xml_button = tds.nth(11).locator('button')
-            xml_id = await xml_button.get_attribute("id") or "" 
-            
-            url_descarga_html = f"{BASE_URL}/miempresa/html-visor?id={html_id}&cups={html_value}" 
-            url_descarga_xml = f"{BASE_URL}/miempresa/xml-download?id={xml_id}" 
-            
-            facturas_pagina.append(FacturaEndesaCliente(
+            # 1. Crear instancia de Factura (solo metadata)
+            factura = FacturaEndesaCliente(
                 fecha_emision=await _extraer_texto_de_td(tds.nth(0)),
                 numero_factura=await _extraer_texto_de_td(tds.nth(1)),
                 fecha_inicio_periodo=await _extraer_texto_de_td(tds.nth(2)),
@@ -158,10 +209,18 @@ async def _extraer_pagina_actual(page: Page) -> list[FacturaEndesaCliente]:
                 tipo_factura=await _extraer_texto_de_td(tds.nth(10)),
                 
                 descarga_selector=pdf_value, 
-                url_descarga_pdf=pdf_url, 
-                url_descarga_html=url_descarga_html, 
-                url_descarga_xml=url_descarga_xml, 
-            ))
+                url_descarga_pdf=BASE_URL + pdf_value if pdf_value.startswith('/') else BASE_URL + '/...',
+                url_descarga_html=f"{BASE_URL}/html-visor?id={await tds.nth(12).locator('button').get_attribute('id')}&cups={await tds.nth(12).locator('button').get_attribute('value')}",
+                url_descarga_xml=f"{BASE_URL}/xml-download?id={await tds.nth(11).locator('button').get_attribute('id')}", 
+            )
+            
+            # 2. Descargar localmente los 3 archivos
+            print(f"[INFO] Iniciando descarga para {factura.numero_factura} ({factura.cups})...")
+            await _descargar_archivo_fila(page, row, factura, 'PDF')
+            await _descargar_archivo_fila(page, row, factura, 'XML')
+            await _descargar_archivo_fila(page, row, factura, 'HTML')
+            
+            facturas_pagina.append(factura)
             
         except Exception as e:
             print(f"[DEBUG_EXTRACTION] Fallo al procesar fila {i}: {e}")
@@ -170,9 +229,7 @@ async def _extraer_pagina_actual(page: Page) -> list[FacturaEndesaCliente]:
     return facturas_pagina
 
 async def leer_tabla_facturas(page: Page) -> list[FacturaEndesaCliente]:
-    """
-    Bucle principal para leer TODAS las páginas de la tabla de resultados para el CUPS filtrado.
-    """
+    """Bucle principal para leer TODAS las páginas de la tabla de resultados."""
     facturas_totales: list[FacturaEndesaCliente] = []
     page_num = 1
     
@@ -421,7 +478,7 @@ async def ejecutar_robot() -> list:
         facturas_metadata = await leer_tabla_facturas(page) 
         facturas_extraidas = facturas_metadata
 
-        # 5. Impresión de Debug y Resumen (Corrección del Output)
+        # 5. Log y Resumen (Corrección del Output)
         
         # 5.1. Exportar a CSV (Log)
         if facturas_metadata:
@@ -452,8 +509,6 @@ async def ejecutar_robot() -> list:
                 print("-" * 30)
             
             print("========================================================\n")
-
-        # El DEBUG final fue movido al bloque finally
         
         return facturas_extraidas
 
