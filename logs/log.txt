@@ -1,3 +1,1 @@
-[2025-12-16 19:44:46] 
-API llamada: /clear_files - Completada
-
+	[2025-12-23 18:27:25] Archivo de logs vaciado.

@@ -6,216 +6,138 @@ import base64 # Necesario para la codificación Base64
 import os # Necesario para manejar rutas de archivos
 from playwright.async_api import Page, TimeoutError, Locator # Importamos Page, TimeoutError, Locator
 from modelos_datos import FacturaEndesaCliente # Importamos la clase modelo de datos (AHORA ES PYDANTIC)
-# IMPORTACIÓN DEL PARSER XML
-from xml_parser import procesar_xml_local
 # IMPORTACIÓN DE LA FUNCIÓN DE LOGGING
 from logs import escribir_log
 
-# --- CONSTANTES DE ENDESA ---
-URL_LOGIN = "https://endesa-atenea.my.site.com/miempresa/s/login/?language=es" 
-URL_BUSQUEDA_FACTURAS = "https://endesa-atenea.my.site.com/miempresa/s/asistente-busqueda?tab=f"
+# --- CONSTANTES DE E-DISTRIBUCIÓN ---
+URL_LOGIN = "https://zonaprivada.edistribucion.com/areaprivada/s/login/?language=es"
+URL_FACTURAS = "https://zonaprivada.edistribucion.com/areaprivada/s/wp-billingchecking"
 
-# Credenciales REALES proporcionadas por el usuario
-USER = os.environ.get("ENDESA_USER", "no_user_configured") 
-PASSWORD = os.environ.get("ENDESA_PASSWORD", "no_password_configured")
+# Credenciales REALES (Prioriza variables de entorno si existen)
+USER = os.environ.get("DISTRIBUCION_USER", "no_usuario") 
+PASSWORD = os.environ.get("DISTRIBUCION_PASSWORD", "no_contrasena")
 
-GRUPO_EMPRESARIAL = "GRUPO HERMANOS MARTIN" # Constante para el filtro siempre aplicado
-
-# LÍMITE DE FILAS Y ROBUSTEZ
-TABLE_LIMIT = 50 
 MAX_LOGIN_ATTEMPTS = 5 # NÚMERO MÁXIMO DE INTENTOS DE LOGIN
 
-# Selector que aparece SÓLO después de un login exitoso (El botón de cookies)
-SUCCESS_INDICATOR_SELECTOR = '#truste-consent-button' 
-
 # --- CONSTANTE DE LOGGING Y CARPETAS DE DESCARGA ---
-LOG_FILE_NAME_TEMPLATE = "csv/facturas_endesa_log_{cups}.csv"
+LOG_FILE_NAME_TEMPLATE = "csv/facturas_edistribucion_log.csv"
 
 # Definición de las subcarpetas usando la constante TEMP_DOWNLOAD_ROOT de navegador.py
 DOWNLOAD_FOLDERS = {
-    'PDF': os.path.join(TEMP_DOWNLOAD_ROOT, 'Facturas_Endesa_PDFs'),
-    'XML': os.path.join(TEMP_DOWNLOAD_ROOT, 'Facturas_Endesa_XMLs'),
-    #'HTML': os.path.join(TEMP_DOWNLOAD_ROOT, 'Facturas_Endesa_HTMLs')
+    'PDF': os.path.join(TEMP_DOWNLOAD_ROOT, 'Facturas_Edistribucion_PDFs')
 }
-# Aseguramos que todas las carpetas existan
+# Aseguramos que la carpeta exista
 for folder in DOWNLOAD_FOLDERS.values():
     os.makedirs(folder, exist_ok=True)
+
 escribir_log(f"[INFO] Carpetas de descarga configuradas en: {TEMP_DOWNLOAD_ROOT}")
 
 
-# --- FUNCIONES DE UTILIDAD PARA EXTRACCIÓN Y LOGGING (INALTERADAS) ---
+# --- FUNCIONES DE UTILIDAD PARA EXTRACCIÓN Y LOGGING ---
 
 def _clean_and_convert_float(text: str) -> float:
-    """Limpia una cadena de texto de importe (ej. '4697.73 €') y la convierte a float."""
-    cleaned_text = re.sub(r'[^\d,\.]', '', text).replace(',', '.')
-    try:
-        return float(cleaned_text)
-    except ValueError:
-        return 0.0
-
-async def _extraer_texto_de_td(td: Locator) -> str:
-    """Extrae texto de una celda de tabla."""
-    try:
-        lightning_element = td.locator("lightning-formatted-date-time, button, a")
-        if await lightning_element.count() > 0:
-            return (await lightning_element.first.inner_text()).strip() 
-        
-        text = await td.inner_text() 
-        return text.strip() if "No hay resultados" not in text else ""
-    except Exception:
-        return ""
+    """Limpia una cadena de texto de importe (ej. '228.94€ / 0€') y la convierte a float."""
+    match = re.search(r'([\d\.,]+)', text)
+    if match:
+        cleaned = match.group(1).replace('.', '').replace(',', '.')
+        try:
+            return float(cleaned)
+        except ValueError:
+            return 0.0
+    return 0.0
 
 def _exportar_log_csv(facturas: list[FacturaEndesaCliente], filepath: str):
     """
-    Exporta TODA la metadata y datos detallados de las facturas 
-    extraídas (incluyendo el parseo XML) a un archivo CSV.
+    Exporta TODA la metadata de las facturas extraídas a un archivo CSV.
     """
-    # Se recomienda que esta función se mantenga igual o se elimine si el log 
-    # se gestiona fuera de la API, pero la mantenemos por ahora.
-    fieldnames = [
-        # Metadata de la tabla
-        'fecha_emision', 'numero_factura', 'fecha_inicio_periodo', 'fecha_fin_periodo', 
-        'importe_total_tabla', 'contrato', 'cups', 'secuencial', 'estado_factura', 
-        'fraccionamiento', 'tipo_factura', 'descarga_selector',
-        # Datos detallados (XML/OCR)
-        'mes_facturado', 'tarifa', 'direccion_suministro', 
-        'potencia_p1', 'potencia_p2', 'potencia_p3', 'potencia_p4', 
-        'potencia_p5', 'potencia_p6', 'importe_de_potencia', 'num_dias', 
-        'consumo_kw_p1', 'consumo_kw_p2', 'consumo_kw_p3', 'consumo_kw_p4', 
-        'consumo_kw_p5', 'consumo_kw_p6', 'kw_totales', 'importe_consumo', 
-        'importe_bono_social', 'importe_impuesto_electrico', 'importe_alquiler_equipos', 
-        'importe_otros_conceptos', 'importe_exceso_potencia', 'importe_reactiva', 
-        'importe_base_imponible', 'importe_facturado', 'fecha_de_vencimiento', 
-        'importe_total_final', 'fecha_de_cobro_en_banco'
-    ]
+    if not facturas: return
+    fieldnames = list(FacturaEndesaCliente.model_fields.keys())
     
-    # NOTA: Pydantic.BaseModel tiene un método .dict() o .model_dump()
-    # que simplifica esto, pero usamos getattr para la compatibilidad con el código original.
-    data_to_write = [{key: getattr(f, key, '') for key in fieldnames} for f in facturas]
-
     try:
-        escribir_log(f"[DEBUG_CSV] Intentando escribir {len(data_to_write)} filas en {filepath}")
-        
-        with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+        escribir_log(f"[CSV]")
+        file_exists = os.path.isfile(filepath)
+        # Usamos 'a' (append) para ir acumulando las facturas de todos los roles en el mismo fichero
+        with open(filepath, 'a', newline='', encoding='utf-8') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter=';')
-            writer.writeheader()
-            writer.writerows(data_to_write)
-        escribir_log(f"✅ Log CSV exportado exitosamente a: {os.path.abspath(filepath)}")
+            if not file_exists:
+                writer.writeheader()
+            for f in facturas:
+                writer.writerow(f.model_dump())
+        escribir_log(f"    -> [OK] Log CSV exportado a: {filepath}")
     except Exception as e:
-        escribir_log(f"❌ Error al exportar el log CSV a {filepath}: {e}")
-
-async def _wait_for_data_load(page: Page, timeout: int = 20000):
-    """Espera a que los datos dinámicos de la primera fila estén cargados y estables."""
-    importe_cell_selector = 'table#example1 tbody tr:nth-child(1) td:nth-child(5)'
-    estado_cell_selector = 'table#example1 tbody tr:nth-child(1) td:nth-child(9)'
-    
-    await page.locator(importe_cell_selector).filter(
-        has_not_text=re.compile(r"(Cargando|\.\.\.)", re.IGNORECASE)
-    ).wait_for(state="visible", timeout=timeout)
-    
-    await page.locator(estado_cell_selector).filter(
-        has_not_text=re.compile(r"(Cargando|\.\.\.)", re.IGNORECASE)
-    ).wait_for(state="visible", timeout=timeout)
-    
-    await page.locator('span.pagination-flex-central').wait_for(state="visible", timeout=5000)
+        escribir_log(f"    -> [ERROR CSV] Fallo al exportar CSV: {e}")
 
 
-# --- LÓGICA DE DESCARGA LOCAL Y EXTRACCIÓN (INALTERADA) ---
+# --- LÓGICA DE DESCARGA LOCAL Y EXTRACCIÓN ---
 
-async def _descargar_archivo_fila(page: Page, row_locator: Locator, factura: FacturaEndesaCliente, doc_type: str) -> str | None:
+async def _descargar_archivo_fila(page: Page, row_locator: Locator, factura: FacturaEndesaCliente) -> str | None:
     """
-    Intenta descargar un tipo de archivo (PDF, XML, ###HTML###) haciendo clic en el botón de la fila
-    y guardándolo localmente.
+    Intenta descargar el archivo PDF haciendo clic en el botón de la fila.
     """
+    # En Edistribución el botón se identifica por name="PDF"
+    button_locator = row_locator.locator('button[name="PDF"]')
     
-    doc_type = doc_type.upper() # PDF, XML, HTML
-    
-    if doc_type == 'PDF':
-        button_col_index = 13
-        file_ext = 'pdf'
-        button_locator_selector = f'button[value*="{factura.descarga_selector}"]' 
-    # elif doc_type == 'HTML':
-    #     button_col_index = 12
-    #     file_ext = 'html'
-    #     button_locator_selector = 'button:has-text("HTML")' 
-    elif doc_type == 'XML':
-        button_col_index = 11
-        file_ext = 'xml'
-        button_locator_selector = 'button:has-text("@")' 
-    else:
+    if await button_locator.count() == 0:
         return None
 
     try:
-        button_locator = row_locator.locator(f'td').nth(button_col_index).locator(button_locator_selector)
-        target_folder = DOWNLOAD_FOLDERS[doc_type]
-        filename = f"{factura.cups}_{factura.numero_factura}.{file_ext}"
+        target_folder = DOWNLOAD_FOLDERS['PDF']
+        filename = f"{factura.cups}_{factura.numero_factura}.pdf"
         save_path = os.path.join(target_folder, filename)
         
         async with page.expect_download(timeout=30000) as download_info:
-            await button_locator.click(timeout=10000)
+            await button_locator.click()
             
         download = await download_info.value
         await download.save_as(save_path)
         
-        escribir_log(f"   -> [DESCARGA {doc_type}] Guardado en: {save_path}")
-        
+        escribir_log(f"    -> [OK] [DESCARGA PDF] Guardado en: {save_path}")
         return save_path
         
-    except TimeoutError:
-        escribir_log(f"   -> [ADVERTENCIA {doc_type}] Timeout (30s) al hacer clic o iniciar la descarga. Omitiendo.")
-        return None
     except Exception as e:
-        escribir_log(f"   -> [ERROR {doc_type}] Fallo inesperado en la descarga: {e}")
+        escribir_log(f"   -> [ERROR PDF] Fallo inesperado en la descarga: {e}")
         return None
 
 async def _extraer_pagina_actual(page: Page) -> list[FacturaEndesaCliente]:
     """
-    Extrae los datos de todas las filas visibles en la página actual de la tabla de resultados.
-    Esta función también activa la descarga local e INTEGRA EL PARSEO XML.
+    Extrae los datos de todas las filas visibles en la tabla y descarga el PDF.
     """
     facturas_pagina: list[FacturaEndesaCliente] = []
-    rows = page.locator('table#example1 tbody tr')
+    # Selector de filas basado en la tabla de Salesforce
+    rows = page.locator('table[lwc-392cvb27u8q] tbody tr')
     row_count = await rows.count()
     if row_count == 0:
         return facturas_pagina
-
-    escribir_log(f"-> Extrayendo {row_count} filas de la tabla actual...")
     
     for i in range(row_count):
+        escribir_log(f"{'='*40} [ROW {i+1}]", mostrar_tiempo=False)
         row = rows.nth(i)
-        tds = row.locator('td')
-        
         try:
-            # Extracción de metadata
-            pdf_value = await tds.nth(13).locator('button').get_attribute("value") or ""
-            
-            # 1. Crear instancia de Factura (solo metadata)
+            # Extracción por data-label (robusto frente a cambios de orden)
+            cups_val = (await row.locator('th[data-label="CUPS"]').inner_text()).strip()
+            f_fiscal = (await row.locator('td[data-label="FACTURA FISCAL"]').inner_text()).strip()
+            fecha_em = (await row.locator('td[data-label="FECHA"]').inner_text()).strip()
+            imp_raw = await row.locator('td[data-label="TOTAL/PDTE"]').inner_text()
+            est = (await row.locator('td[data-label="Estado"]').inner_text()).strip()
+            tipo_f = (await row.locator('td[data-label="Tipo"]').inner_text()).strip()
+
+            # 1. Crear instancia de Factura (Metadata de tabla)
             factura = FacturaEndesaCliente(
-                fecha_emision=await _extraer_texto_de_td(tds.nth(0)),
-                numero_factura=await _extraer_texto_de_td(tds.nth(1)),
-                fecha_inicio_periodo=await _extraer_texto_de_td(tds.nth(2)),
-                fecha_fin_periodo=await _extraer_texto_de_td(tds.nth(3)),
-                importe_total_tabla=_clean_and_convert_float(await _extraer_texto_de_td(tds.nth(4))),
-                contrato=await _extraer_texto_de_td(tds.nth(5)),
-                cups=await _extraer_texto_de_td(tds.nth(6)),
-                secuencial=await _extraer_texto_de_td(tds.nth(7)),
-                estado_factura=await _extraer_texto_de_td(tds.nth(8)),
-                fraccionamiento=await _extraer_texto_de_td(tds.nth(9)),
-                tipo_factura=await _extraer_texto_de_td(tds.nth(10)),
-                descarga_selector=pdf_value, 
-            )
-            
-            # 2. Descargar localmente los 3 archivos
-            escribir_log(f"[INFO] Iniciando descarga para {factura.numero_factura} ({factura.cups})...")
-            
-            xml_save_path = await _descargar_archivo_fila(page, row, factura, 'XML')
-            await _descargar_archivo_fila(page, row, factura, 'PDF')
-            # await _descargar_archivo_fila(page, row, factura, 'HTML')
-            
-            # 3. INTEGRACIÓN DEL PARSEO XML: Si el XML se descargó, lo procesamos.
-            if xml_save_path:
-                escribir_log(f"[INFO] Procesando XML para {factura.numero_factura}...")
-                procesar_xml_local(factura, xml_save_path)
+                cups=cups_val,
+                numero_factura=f_fiscal,
+                fecha_emision=fecha_em,
+                importe_total_tabla=_clean_and_convert_float(imp_raw),
+                estado_factura=est,
+                tipo_factura=tipo_f,
+                secuencial=str(i),
+                descarga_selector=f_fiscal, # Usamos el número de factura como referencia
+                error_RPA=False
+            )    
+            escribir_log(f"    [OK] Datos extraídos para fila {i+1}: Factura {factura.numero_factura} ({factura.cups})")
+
+            # 2. Descargar localmente el PDF
+            escribir_log(f"[FILES]")
+            await _descargar_archivo_fila(page, row, factura)
             
             facturas_pagina.append(factura)
             
@@ -225,276 +147,178 @@ async def _extraer_pagina_actual(page: Page) -> list[FacturaEndesaCliente]:
 
     return facturas_pagina
 
-async def leer_tabla_facturas(page: Page) -> list[FacturaEndesaCliente]:
-    """Bucle principal para leer TODAS las páginas de la tabla de resultados."""
-    facturas_totales: list[FacturaEndesaCliente] = []
-    page_num = 1
-    
-    tabla_selector = 'div.style-table.contenedorGeneral table#example1'
-    await page.wait_for_selector(tabla_selector, timeout=30000)
-    escribir_log("Tabla de resultados cargada. Iniciando paginación defensiva...")
-    
-    next_button_selector = 'button.pagination-flex-siguiente'
-    
-    while True:
-        escribir_log(f"\t--- Procesando Página {page_num} ---")
-        
-        try:
-            await _wait_for_data_load(page, timeout=10000) 
-        except TimeoutError:
-            escribir_log("Advertencia: Los datos dinámicos no cargaron en el tiempo esperado. Extrayendo datos incompletos.")
-            
-        facturas_pagina = await _extraer_pagina_actual(page)
-        
-        escribir_log(f"[DEBUG_LOOP] Página {page_num} extrajo {len(facturas_pagina)} filas.")
-        
-        facturas_totales.extend(facturas_pagina)
-        
-        next_button = page.locator(next_button_selector)
-        is_disabled = await next_button.is_disabled()
-        
-        if is_disabled:
-            escribir_log(f"Final de la tabla alcanzado en la página {page_num}.")
-            break
-            
-        try:
-            await next_button.click(timeout=10000)
-            await page.wait_for_timeout(500) 
-            page_num += 1
-        except TimeoutError:
-            escribir_log("Error: Fallo al hacer clic en 'SIGUIENTE' (Timeout). Finalizando bucle.")
-            break
-            
-    escribir_log(f"[DEBUG_LOOP_END] Retornando {len(facturas_totales)} elementos.")
-    return list(facturas_totales)
 
-
-# --- FUNCIONES AUXILIARES DE FLUJO (INALTERADAS) ---
+# --- FUNCIONES AUXILIARES DE FLUJO ---
 
 async def _iniciar_sesion(page: Page, username: str, password: str) -> bool:
-    """Función interna para manejar la lógica de autenticación en Endesa."""
-    escribir_log(f"Intentando iniciar sesión con usuario: {username}")
-    
     try:
-        await page.wait_for_selector('form.slds-form', timeout=10000)
-
-        # 1. Rellenar campos
-        await page.fill('input[name="Username"]', username)
+        await page.wait_for_selector('input[name="username"]', timeout=20000)
+        await page.fill('input[name="username"]', username)
         await page.fill('input[name="password"]', password)
-        
-        # 2. Hacer click en el botón de iniciar sesión
-        login_button_selector = 'button:has-text("ACCEDER")'
-        await page.click(login_button_selector)
-        
-        # 3. Esperar el indicador de éxito (el botón de cookies) en la nueva página
-        await page.wait_for_selector(SUCCESS_INDICATOR_SELECTOR, timeout=30000)
-        
-        escribir_log(f"Login exitoso. Página de destino cargada.")
+        await page.click('button:has-text("ENTRAR")')
+        await page.wait_for_load_state("networkidle")
         return True
-
-    except TimeoutError:
-        escribir_log("Fallo en el Login: El tiempo de espera para cargar el indicador de éxito (cookies o dashboard) ha expirado.")
-        final_url = page.url
-        if final_url.startswith(URL_LOGIN) and await page.is_visible('div[class*="error"]'):
-             escribir_log("Razón: Credenciales incorrectas.")
-        return False
     except Exception as e:
-        escribir_log(f"Error inesperado durante la autenticación: {e}")
+        escribir_log(f"Error en la autenticación: {e}")
         return False
 
-async def _aceptar_cookies(page: Page):
-    """Función interna para aceptar el banner de cookies si está presente."""
-    cookie_button_selector = '#truste-consent-button'
+async def obtener_todos_los_roles(page: Page) -> list[str]:
+    """Extrae los nombres de todos los roles del desplegable filtrando valores nulos."""
+    escribir_log("Obteniendo lista de roles disponibles...")
+    await page.locator('button[title="Cambio de rol"]').click()
+    # Esperamos a que los elementos del menú sean visibles
+    await page.wait_for_selector('a[role="menuitem"]', timeout=15000)
     
-    try:
-        await page.wait_for_selector(cookie_button_selector, timeout=5000)
-        await page.click(cookie_button_selector)
-        escribir_log("Cookies aceptadas.")
-        await page.wait_for_timeout(500) 
+    roles_elements = page.locator('a[role="menuitem"]')
+    count = await roles_elements.count()
+    roles = []
+    
+    for i in range(count):
+        # Obtenemos el atributo title
+        nombre = await roles_elements.nth(i).get_attribute("title")
         
-    except TimeoutError:
-        escribir_log("Banner de cookies no detectado. Continuando...")
-        pass
-    except Exception as e:
-        escribir_log(f"Error al intentar aceptar las cookies: {e}")
-
-async def realizar_busqueda_facturas(page: Page, grupo_empresarial: str, cups: str, fecha_desde: str, fecha_hasta: str):
-    """
-    Navega al asistente de búsqueda y aplica el filtro del grupo empresarial, el CUPS
-    y el rango de fechas.
-    """
-    escribir_log(f"\t--- INICIO DE BÚSQUEDA: {cups} ({grupo_empresarial}) ---")
+        # CORRECCIÓN: Solo añadimos a la lista si el nombre existe y no es una cadena vacía o "None"
+        if nombre and str(nombre).strip().lower() != "none" and str(nombre).strip() != "":
+            roles.append(nombre.strip())
+            escribir_log(f"   - Empresa detectada: {nombre.strip()}", mostrar_tiempo=False)
     
-    await page.goto(URL_BUSQUEDA_FACTURAS, wait_until="domcontentloaded")
-    escribir_log("Navegación al asistente de búsqueda completada.")
-
-    main_filter_container_selector = 'div.filter-padd-container'
-    await page.wait_for_selector(main_filter_container_selector, timeout=20000)
-    escribir_log("Contenedor de filtros detectado. Iniciando interacción...")
-    # --- FILTRO 1: GRUPO EMPRESARIAL ---
-    grupo_empresarial_button = 'button[name="periodo"]:has-text("Grupo empresarial")'
-    await page.wait_for_selector(grupo_empresarial_button, timeout=15000)
-    await page.click(grupo_empresarial_button)
-
-    input_selector = 'input[placeholder="Buscar"]'
-    await page.wait_for_selector(input_selector, timeout=10000)
-    await page.fill(input_selector, grupo_empresarial)
-
-    opcion_selector = f'span[role="option"] >> text="{grupo_empresarial}"'
-    await page.wait_for_timeout(500) 
-    await page.wait_for_selector(opcion_selector, timeout=10000)
-    await page.click(opcion_selector)
-    escribir_log(f"Filtro aplicado: Grupo empresarial '{grupo_empresarial}'.")
-
-    # --- FILTRO 2: CUPS ---
-    cups_button = 'button[name="periodo"]:has-text("CUPS20/CUPS22")'
-    await page.click(cups_button)
-
-    await page.wait_for_selector(input_selector, timeout=10000) 
-    await page.fill(input_selector, cups)
-
-    cups_opcion_selector = f'span[role="option"] >> text="{cups}"'
-    await page.wait_for_timeout(500) 
-    await page.wait_for_selector(cups_opcion_selector, timeout=10000)
-    await page.click(cups_opcion_selector)
-    escribir_log(f"Filtro aplicado: CUPS '{cups}'.")
+    # Cerramos el menú volviendo a pulsar el botón para que no bloquee la pantalla
+    await page.locator('button[title="Cambio de rol"]').click()
     
-    # --- FILTRO 3: FECHA DE EMISIÓN (DESDE / HASTA) ---
-    selector_fecha_desde = page.get_by_label("Desde", exact=True).nth(1)
-    selector_fecha_hasta = page.get_by_label("Hasta", exact=True).nth(1)
+    escribir_log(f"Total de empresas válidas a procesar: {len(roles)}")
+    return roles
 
-    await selector_fecha_desde.wait_for(timeout=10000)
-    await selector_fecha_desde.fill(fecha_desde)
-    await selector_fecha_hasta.fill(fecha_hasta)
-    escribir_log(f"Filtro aplicado: Fechas Desde '{fecha_desde}' hasta '{fecha_hasta}'.")
+async def seleccionar_rol_especifico(page: Page, nombre_rol: str):
 
-    # --- AJUSTAR LÍMITE DE RESULTADOS ---
-    slider_input = page.get_by_label("Limite")
-    await slider_input.wait_for(timeout=10000) 
-    await slider_input.fill(str(TABLE_LIMIT)) 
-    await page.wait_for_selector(f'span.slds-slider__value:has-text("{TABLE_LIMIT}")', timeout=5000)
+    await page.locator('button[title="Cambio de rol"]').click()
+    opcion = page.locator(f'a[role="menuitem"][title="{nombre_rol}"]')
+    await opcion.wait_for(state="visible")
     
-    # --- CLIC EN BOTÓN BUSCAR ---
-    buscar_button_selector = 'button.slds-button_brand:has-text("Buscar")'
-    await page.wait_for_selector(buscar_button_selector, timeout=10000)
-    await page.click(buscar_button_selector)
+    clases = await opcion.get_attribute("class")
+    if "wp-roleSelected" in (clases or ""):
+        await page.locator('button[title="Cambio de rol"]').click()
+    else:
+        await opcion.click()
+        await page.wait_for_load_state("networkidle")
+
+async def aplicar_filtros_fechas(page: Page, f_desde, f_hasta):
+    await page.goto(URL_FACTURAS, wait_until="networkidle")
     
-    tabla_selector = 'div.style-table.contenedorGeneral table#example1'
-    await page.wait_for_selector(tabla_selector, timeout=60000)
+    # Activar radio de rango
+    await page.locator('span.slds-form-element__label:has-text("Rango de fechas")').click()
+    await page.wait_for_timeout(1000)
     
-    escribir_log("--- FILTRADO COMPLETADO. LISTO PARA LA LECTURA DE DATOS ---")
+    await page.fill('.filter-date-from input', "")
+    await page.type('.filter-date-from input', f_desde, delay=60)
+    await page.fill('.filter-date-to input', "")
+    await page.type('.filter-date-to input', f_hasta, delay=60)
+    
+    await page.locator('button:has-text("Aplicar")').last.click()
+    escribir_log("Filtros Aplicados. Esperando carga de tabla (Máx 60s)...")
+
+    for i in range(30):
+        if await page.locator('lightning-primitive-cell-factory').first.is_visible():
+            escribir_log("    [OK] Tabla cargada con éxito.")
+            return True
+        if await page.is_visible('div:has-text("No se encuentran resultados")'):
+            escribir_log("    [INFO] Sin resultados para este periodo.")
+            return False
+        await asyncio.sleep(2)
+    return False
 
 
 # --------------------------------------------------------------------------------
-# --- FUNCIÓN PRINCIPAL PARA LA API (Acepta Parámetros) ---
+# --- FUNCIÓN PRINCIPAL PARA LA API ---
 # --------------------------------------------------------------------------------
 
-async def ejecutar_robot_api(cups: str, fecha_desde: str, fecha_hasta: str) -> list[FacturaEndesaCliente]:
-    """
-    Función principal que orquesta el robot completo: login, búsqueda, lectura de datos
-    y parseo XML, usando los parámetros provistos por la llamada API.
-    """
+async def ejecutar_robot_api(fecha_desde: str, fecha_hasta: str) -> list[FacturaEndesaCliente]:
     robot = NavegadorAsync()
-    facturas_extraidas = []
-    login_successful = False
+    todas_las_facturas = []
     
     try:
-        # 1. Bucle de Reintentos de Login
+        escribir_log(f"    [INICIO] Proceso RPA Edistribución. Desde={fecha_desde}, Hasta={fecha_hasta}", pretexto="\n")
+        escribir_log(f"{'='*40} ", mostrar_tiempo=False)
+        
         for attempt in range(1, MAX_LOGIN_ATTEMPTS + 1):
-            escribir_log(f"[Intento {attempt}/{MAX_LOGIN_ATTEMPTS}] Iniciando sesión...")
-            
+            escribir_log(f"[LOGIN] Intento {attempt}/{MAX_LOGIN_ATTEMPTS}...", pretexto="\n\t")
             await robot.iniciar()
             await robot.goto_url(URL_LOGIN)
-
-            login_successful = await _iniciar_sesion(robot.get_page(), USER, PASSWORD)
-
-            if login_successful:
+            
+            if await _iniciar_sesion(robot.get_page(), USER, PASSWORD):
+                escribir_log(f"[LOGIN] Sesión establecida correctamente.")
                 break
             
-            # Si falla, cerramos el navegador y esperamos antes de reintentar
             await robot.cerrar()
-            if attempt < MAX_LOGIN_ATTEMPTS:
-                escribir_log(f"Login fallido en el intento {attempt}. Esperando 5 segundos antes de reintentar.")
-                await asyncio.sleep(5) 
-            else:
-                # Si falla el último intento, lanzamos un error que la API manejará
-                raise Exception(f"Fallo crítico: No se pudo iniciar sesión después de {MAX_LOGIN_ATTEMPTS} intentos.")
+            if attempt == MAX_LOGIN_ATTEMPTS:
+                raise Exception("Fallo crítico de Login.")
+            await asyncio.sleep(5)
 
-        if not login_successful:
-            # Esto no debería ejecutarse si la excepción se lanza arriba, pero es un seguro
-            raise Exception("Fallo crítico: El robot terminó el bucle de intentos de login sin éxito.")
-            
         page = robot.get_page()
+        roles = await obtener_todos_los_roles(page)
 
-        # 2. Manejo de Cookies
-        await _aceptar_cookies(page)
-        
-        # 3. Navegación y Búsqueda (Usando los parámetros cups, fecha_desde, fecha_hasta)
-        await realizar_busqueda_facturas(page, GRUPO_EMPRESARIAL, cups, fecha_desde, fecha_hasta)
-        
-        # 4. Extracción de datos de la tabla (Descarga y Parseo XML incluidos)
-        facturas_metadata = await leer_tabla_facturas(page) 
-        facturas_extraidas = facturas_metadata
+        for rol in roles:
+            escribir_log(f"{'='*40}", pretexto="\n", mostrar_tiempo=False)
+            escribir_log(f"PROCESANDO EMPRESA: {rol}")
+            escribir_log(f"{'='*80}", mostrar_tiempo=False)
+            
+            try:
+                await seleccionar_rol_especifico(page, rol)
+                
+                escribir_log(f"[BUSQUEDA]")
+                hay_datos = await aplicar_filtros_fechas(page, fecha_desde, fecha_hasta)
+                
+                if hay_datos:
+                    escribir_log(f"[EXTRACCIÓN]")
+                    facturas_rol = await _extraer_pagina_actual(page)
+                    todas_las_facturas.extend(facturas_rol)
+                    # Guardamos el CSV acumulado
+                    _exportar_log_csv(facturas_rol, LOG_FILE_NAME_TEMPLATE)
+                    escribir_log(f"{'='*80}", mostrar_tiempo=False)
+                    escribir_log(f"[OK] {len(facturas_rol)} facturas procesadas para {rol}.")
+                
+            except Exception as e:
+                escribir_log(f"[ERROR] Fallo en ROL {rol}: {e}")
+                continue
 
-        # 5. Log y Resumen (Opcional, para la consola del servidor)
-        if facturas_metadata:
-            log_filepath_dynamic = LOG_FILE_NAME_TEMPLATE.format(cups=cups)
-            _exportar_log_csv(facturas_metadata, log_filepath_dynamic)
-            escribir_log(f"RESUMEN: {len(facturas_extraidas)} facturas procesadas para {cups}.")
+        escribir_log(f"[OK][FIN] Proceso completado. Total facturas: {len(todas_las_facturas)}")
+        return todas_las_facturas
 
-        # Devolver la lista de objetos FacturaEndesaCliente
-        return facturas_extraidas
-
-    except Exception as e:
-        escribir_log(f"Ocurrió un error crítico en la orquestación del robot: {e}")
-        # Relanzamos la excepción para que el endpoint de FastAPI la capture y devuelva un error HTTP 500
-        raise e
     finally:
-        # ** IMPORTANTE: Cerramos el navegador siempre, ya que está ejecutando en un servidor **
-        if hasattr(robot, 'browser') and robot.browser:
-            await robot.cerrar()
-            escribir_log("\tSesión de navegador cerrada.")
-        else:
-             escribir_log("\tEl navegador ya está cerrado.")
-
-# --------------------------------------------------------------------------------
-# --- NUEVA FUNCIÓN PARA LA SEGUNDA LLAMADA API (ACCESO A PDF LOCAL - SÍNCRONA) ---
-# --------------------------------------------------------------------------------
+        await robot.cerrar()
+        escribir_log("[SISTEMA] Navegador cerrado.\n")
 
 def obtener_pdf_local_base64(cups: str, numero_factura: str) -> dict:
-    """
-    Lee un archivo PDF previamente descargado del disco local (sin RPA), 
-    lo codifica en Base64 y devuelve su contenido.
-    
-    Esta función es SÍNCRONA, adecuada para lectura de archivos.
-    """
+    """Lee el PDF descargado y lo devuelve en Base64."""
     target_folder = DOWNLOAD_FOLDERS['PDF']
     filename = f"{cups}_{numero_factura}.pdf"
     file_path = os.path.join(target_folder, filename)
     
-    if not os.path.exists(file_path):
-        # Lanza un error que será capturado por el endpoint de FastAPI
-        raise FileNotFoundError(f"El archivo no existe en la ruta esperada: {file_path}")
+    respuesta = {"filename": filename, "cups": cups, "numero_factura": numero_factura, "pdf_base64": ""}
 
-    # 1. Leer el PDF binario
-    with open(file_path, 'rb') as pdf_file:
-        pdf_data = pdf_file.read()
+    try:
+        if not os.path.exists(file_path):
+            escribir_log(f"⚠️ PDF no encontrado: {filename}")
+            respuesta["pdf_base64"] = "ERROR: ARCHIVO_NO_ENCONTRADO"
+            return respuesta
+
+        with open(file_path, 'rb') as f:
+            respuesta["pdf_base64"] = base64.b64encode(f.read()).decode('utf-8')
+        
+        escribir_log(f"✅ PDF '{filename}' codificado con éxito.")
+        return respuesta
+    except Exception as e:
+        respuesta["pdf_base64"] = f"ERROR: {str(e)}"
+        return respuesta
     
-    # 2. Codificar en Base64
-    pdf_base64_encoded = base64.b64encode(pdf_data).decode('utf-8')
-
-    escribir_log(f"✅ PDF '{filename}' leído y codificado en Base64. Tamaño: {len(pdf_base64_encoded)//1024} KB.")
-
-    # 3. Devolver el contenido y metadatos
-    return {
-        "filename": filename,
-        "cups": cups,
-        "numero_factura": numero_factura,
-        "pdf_base64": pdf_base64_encoded,
-    }
 
 # --- FUNCIÓN DE PRUEBA Y EJECUCIÓN MANUAL ---
-# ELIMINAMOS LA LÓGICA DE EJECUCIÓN MANUAL PARA EVITAR CONFLICTOS CON UVICORN
 if __name__ == "__main__":
-    escribir_log("robotEndesa.py se está ejecutando en modo manual, pero se detiene la ejecución asíncrona automática.")
-    escribir_log("Para probar, llame a 'ejecutar_robot_api' manualmente con 'asyncio.run()'.")
+    import sys
+    escribir_log("\n" + "!"*60, mostrar_tiempo=False)
+    escribir_log("ADVERTENCIA: robotEndesa.py se está ejecutando de forma directa.", mostrar_tiempo=False)
+    escribir_log("Este script está diseñado para ser invocado desde la API (FastAPI).", mostrar_tiempo=False)
+    escribir_log("Para realizar pruebas, inicie la API y use Swagger (/docs).", mostrar_tiempo=False)
+    escribir_log("!"*60 + "\n", mostrar_tiempo=False)
+    
+    # Opcional: Podrías descomentar esto para una prueba rápida de 1 solo rol sin API
+    # asyncio.run(ejecutar_robot_api("01/10/2025", "31/10/2025"))

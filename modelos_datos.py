@@ -7,24 +7,28 @@ class FacturaEndesaCliente(BaseModel):
     Estructura de datos para almacenar la metadata de una factura extraída de la web.
     Se utiliza Pydantic para la validación y serialización automática en FastAPI.
     """
+
+    # Campo para indicar si hubo un error en el proceso RPA
+    error_RPA: Optional[bool] = False
     
     # === 1. Metadata extraída directamente de la TABLA de Endesa ===
     
-    fecha_emision: str
-    numero_factura: str 
-    fecha_inicio_periodo: str
-    fecha_fin_periodo: str
-    importe_total_tabla: float
-    contrato: str
-    cups: str
-    secuencial: str
-    estado_factura: str
-    fraccionamiento: str
-    tipo_factura: str
+    fecha_emision: Optional[str] = "N/A"
+    numero_factura: Optional[str] = "N/A"
+    fecha_inicio_periodo: Optional[str] = "N/A"
+    fecha_fin_periodo: Optional[str] = "N/A"
+    importe_total_tabla: Optional[float] = 0.0
+    contrato: Optional[str] = "N/A"
+    cups: str  # El CUPS lo mantenemos obligatorio para saber a quién pertenece el error
+    secuencial: Optional[str] = "N/A"
+    estado_factura: Optional[str] = "N/A"
+    fraccionamiento: Optional[str] = "N/A"
+    tipo_factura: Optional[str] = "N/A"
+    
     
     # === 2. Enlaces/Selectores de Descarga (Para el proceso RPA) ===
     
-    descarga_selector: str
+    descarga_selector: Optional[str] = "N/A"
     
     # === 3. Datos DETALLADOS extraídos del XML/HTML ===
     
@@ -90,6 +94,4 @@ class FacturaEndesaCliente(BaseModel):
     importe_total_final: Optional[float] = None 
     fecha_de_cobro_en_banco: Optional[str] = None
     
-    # === 4. Eliminación de campos no utilizados en el modelo (opcional) ===
-    # data_base64: str | None = None
-    # archivo_nombre: str | None = None
+   
