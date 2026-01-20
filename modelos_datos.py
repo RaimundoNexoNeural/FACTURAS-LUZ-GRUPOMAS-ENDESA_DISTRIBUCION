@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import Optional # Usamos Optional para los campos que pueden ser None
 
 # Reemplazamos @dataclass por herencia de BaseModel
-class FacturaEndesaCliente(BaseModel):
+class FacturaEndesaDistribucion(BaseModel):
     """
     Estructura de datos para almacenar la metadata de una factura extraída de la web.
     Se utiliza Pydantic para la validación y serialización automática en FastAPI.
@@ -34,64 +34,39 @@ class FacturaEndesaCliente(BaseModel):
     
     # Campos generales
     mes_facturado: Optional[str] = None
-    tarifa: Optional[str] = None
     direccion_suministro: Optional[str] = None
     
     # Datos de Potencia
-    potencia_p1: Optional[float] = None
-    potencia_p2: Optional[float] = None
-    potencia_p3: Optional[float] = None
-    potencia_p4: Optional[float] = None
-    potencia_p5: Optional[float] = None
-    potencia_p6: Optional[float] = None
-    importe_de_potencia: Optional[float] = None
+    potencia_p1: Optional[float] = 0.0
+    potencia_p2: Optional[float] = 0.0
+    potencia_p3: Optional[float] = 0.0
+    potencia_p4: Optional[float] = 0.0
+    potencia_p5: Optional[float] = 0.0
+    potencia_p6: Optional[float] = 0.0
+
+    termino_de_potencia_peaje: Optional[float] = 0.0
+    termino_de_potencia_cargos: Optional[float] = 0.0
+    importe_de_potencia: Optional[float] = 0.0
     
     # Datos de Consumo
     num_dias: Optional[int] = None
-    consumo_kw_p1: Optional[float] = None
-    consumo_kw_p2: Optional[float] = None
-    consumo_kw_p3: Optional[float] = None
-    consumo_kw_p4: Optional[float] = None
-    consumo_kw_p5: Optional[float] = None
-    consumo_kw_p6: Optional[float] = None
-    kw_totales: Optional[float] = None
 
-    importe_consumo_p1: Optional[float] = None
-    importe_consumo_p2: Optional[float] = None
-    importe_consumo_p3: Optional[float] = None
-    importe_consumo_p4: Optional[float] = None
-    importe_consumo_p5: Optional[float] = None
-    importe_consumo_p6: Optional[float] = None
+    termino_de_energia_peaje: Optional[float] = 0.0
+    termino_de_energia_cargos: Optional[float] = 0.0
+    importe_atr: Optional[float] = 0.0
 
-    energia_precio_indexado_p1: Optional[float] = None
-    energia_precio_indexado_p2: Optional[float] = None
-    energia_precio_indexado_p3: Optional[float] = None
-    energia_precio_indexado_p4: Optional[float] = None
-    energia_precio_indexado_p5: Optional[float] = None
-    energia_precio_indexado_p6: Optional[float] = None
-    importe_consumo: Optional[float] = None
-    
     # Impuestos, conceptos y totales
-    importe_bono_social: Optional[float] = None
-    importe_impuesto_electrico: Optional[float] = None
-    importe_alquiler_equipos: Optional[float] = None
-    importe_otros_conceptos: Optional[float] = None
-
-    importe_exceso_potencia_p1: Optional[float] = None
-    importe_exceso_potencia_p2: Optional[float] = None
-    importe_exceso_potencia_p3: Optional[float] = None
-    importe_exceso_potencia_p4: Optional[float] = None
-    importe_exceso_potencia_p5: Optional[float] = None
-    importe_exceso_potencia_p6: Optional[float] = None
-    importe_exceso_potencia: Optional[float] = None
-    
-    importe_reactiva: Optional[float] = None
-    importe_base_imponible: Optional[float] = None
+    importe_impuesto_electrico: Optional[float] = 0.0
+    importe_alquiler_equipos: Optional[float] = 0.0
+    importe_otros_conceptos: Optional[float] = 0.0
+    importe_exceso_potencia: Optional[float] = 0.0
+    importe_reactiva: Optional[float] = 0.0
+    importe_base_imponible: Optional[float] = 0.0
     
     # Totales y fechas de pago
-    importe_facturado: Optional[float] = None
+    importe_facturado: Optional[float] = 0.0
     fecha_de_vencimiento: Optional[str] = None
-    importe_total_final: Optional[float] = None 
+
     fecha_de_cobro_en_banco: Optional[str] = None
     
    

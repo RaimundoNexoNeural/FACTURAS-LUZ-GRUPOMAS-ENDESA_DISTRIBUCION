@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Query
 from typing import List, Dict, Any
-from modelos_datos import FacturaEndesaCliente
+from modelos_datos import FacturaEndesaDistribucion
 # Cambiamos ejecutar_robot_multiempresa por ejecutar_robot_api
 from robotEndesa import ejecutar_robot_api 
 from robotEndesa import obtener_pdf_local_base64 
@@ -67,7 +67,7 @@ async def clear_files():
 # --- Endpoint de Extracción de Facturas (GET) ---
 @app.get(
     "/facturas", 
-    response_model=List[FacturaEndesaCliente],
+    response_model=List[FacturaEndesaDistribucion],
     summary="Extrae facturas de todos los roles para un rango de fechas."
 )
 async def get_facturas(

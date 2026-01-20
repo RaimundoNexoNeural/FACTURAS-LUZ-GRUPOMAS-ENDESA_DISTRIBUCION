@@ -5,17 +5,18 @@ import csv # Necesario para exportar los logs
 import base64 # Necesario para la codificación Base64
 import os # Necesario para manejar rutas de archivos
 from playwright.async_api import Page, TimeoutError, Locator # Importamos Page, TimeoutError, Locator
-from modelos_datos import FacturaEndesaCliente # Importamos la clase modelo de datos (AHORA ES PYDANTIC)
+from modelos_datos import FacturaEndesaDistribucion # Importamos la clase modelo de datos (AHORA ES PYDANTIC)
 # IMPORTACIÓN DE LA FUNCIÓN DE LOGGING
 from logs import escribir_log
+from pdf_parser import procesar_pdf_local
 
 # --- CONSTANTES DE E-DISTRIBUCIÓN ---
 URL_LOGIN = "https://zonaprivada.edistribucion.com/areaprivada/s/login/?language=es"
 URL_FACTURAS = "https://zonaprivada.edistribucion.com/areaprivada/s/wp-billingchecking"
 
 # Credenciales REALES (Prioriza variables de entorno si existen)
-USER = os.environ.get("DISTRIBUCION_USER", "no_user") 
-PASSWORD = os.environ.get("DISTRIBUCION_PASSWORD", "no_password")
+USER = os.environ.get("DISTRIBUCION_USER", "27298340P") 
+PASSWORD = os.environ.get("DISTRIBUCION_PASSWORD", "z5!tWZWzTDQ6rx9")
 
 MAX_LOGIN_ATTEMPTS = 5 # NÚMERO MÁXIMO DE INTENTOS DE LOGIN
 
@@ -71,12 +72,12 @@ def _clean_and_convert_float(text: str) -> float:
         escribir_log(f"Error al convertir importe '{text}': {e}")
         return 0.0
 
-def _exportar_log_csv(facturas: list[FacturaEndesaCliente], filepath: str):
+def _exportar_log_csv(facturas: list[FacturaEndesaDistribucion], filepath: str):
     """
     Exporta TODA la metadata de las facturas extraídas a un archivo CSV.
     """
     if not facturas: return
-    fieldnames = list(FacturaEndesaCliente.model_fields.keys())
+    fieldnames = list(FacturaEndesaDistribucion.model_fields.keys())
     
     try:
         escribir_log(f"[CSV]")
@@ -95,7 +96,7 @@ def _exportar_log_csv(facturas: list[FacturaEndesaCliente], filepath: str):
 
 # --- LÓGICA DE DESCARGA LOCAL Y EXTRACCIÓN ---
 
-async def _descargar_archivo_fila(page: Page, row_locator: Locator, factura: FacturaEndesaCliente) -> str | None:
+async def _descargar_archivo_fila(page: Page, row_locator: Locator, factura: FacturaEndesaDistribucion) -> str | None:
     """
     Intenta descargar el archivo PDF haciendo clic en el botón de la fila.
     """
@@ -127,12 +128,11 @@ async def _descargar_archivo_fila(page: Page, row_locator: Locator, factura: Fac
         error_limpio = str(e).split('\n')[0]
         raise Exception(f"FALLO_DESCARGA: {error_limpio}")
 
-async def _extraer_pagina_actual(page: Page) -> list[FacturaEndesaCliente]:
+async def _extraer_pagina_actual(page: Page) -> list[FacturaEndesaDistribucion]:
     """
     Extrae los datos de todas las filas visibles en la tabla y descarga el PDF.
     """
-    facturas_pagina: list[FacturaEndesaCliente] = []
-
+    facturas_pagina: list[FacturaEndesaDistribucion] = []
     # Selector de filas basado en la tabla de Salesforce
     rows = page.locator('table[lwc-392cvb27u8q] tbody tr')
     row_count = await rows.count()
@@ -145,7 +145,7 @@ async def _extraer_pagina_actual(page: Page) -> list[FacturaEndesaCliente]:
         row = rows.nth(i)
 
         # Inicializamos la factura con valores por defecto
-        factura = FacturaEndesaCliente(
+        factura = FacturaEndesaDistribucion(
             cups="PENDIENTE", 
             error_RPA=False,
             secuencial=str(i))
@@ -182,6 +182,15 @@ async def _extraer_pagina_actual(page: Page) -> list[FacturaEndesaCliente]:
                 ruta_pdf = await _descargar_archivo_fila(page, row, factura)
                 if not ruta_pdf:
                     raise Exception("NO_DISPONIBLE: No existe botón PDF.")
+                # === INTEGRACION OCR ===
+                if not factura.error_RPA and factura.importe_total_tabla >= 0:
+                    escribir_log(f"    -> [OCR]")
+                    exito_ocr = procesar_pdf_local(factura, ruta_pdf)
+                    if exito_ocr:
+                        escribir_log(f"        -> [OK] OCR completado para {factura.numero_factura}")
+                    else:
+                        escribir_log(f"        -> [!] [OCR] No se pudieron extraer datos adicionales.")
+
             except Exception as e_pdf:
                 factura.error_RPA = True
                 # Concatenamos el error del PDF al mensaje existente (si lo hay)
@@ -288,9 +297,10 @@ async def aplicar_filtros_fechas(page: Page, f_desde, f_hasta):
 # --- FUNCIÓN PRINCIPAL PARA LA API ---
 # --------------------------------------------------------------------------------
 
-async def ejecutar_robot_api(fecha_desde: str, fecha_hasta: str) -> list[FacturaEndesaCliente]:
+async def ejecutar_robot_api(fecha_desde: str, fecha_hasta: str) -> list[FacturaEndesaDistribucion]:
     robot = NavegadorAsync()
     todas_las_facturas = []
+    login_successful = False
     
     try:
         escribir_log(f"    [INICIO] Proceso RPA Edistribución. Desde={fecha_desde}, Hasta={fecha_hasta}", pretexto="\n")
@@ -301,14 +311,18 @@ async def ejecutar_robot_api(fecha_desde: str, fecha_hasta: str) -> list[Factura
             await robot.iniciar()
             await robot.goto_url(URL_LOGIN)
             
-            if await _iniciar_sesion(robot.get_page(), USER, PASSWORD):
+            login_successful = await _iniciar_sesion(robot.get_page(), USER, PASSWORD)
+            if login_successful:
                 escribir_log(f"[LOGIN] Sesión establecida correctamente.")
                 break
             
+            escribir_log(f"[ADVERTENCIA] Intento de login {attempt} fallido. Cerrando contexto.")
             await robot.cerrar()
-            if attempt == MAX_LOGIN_ATTEMPTS:
-                raise Exception("Fallo crítico de Login.")
-            await asyncio.sleep(5)
+
+            if attempt < MAX_LOGIN_ATTEMPTS:
+                await asyncio.sleep(5)
+            else:
+                raise Exception(f"Fallo crítico: No se pudo acceder al portal tras {MAX_LOGIN_ATTEMPTS} intentos.")
 
         page = robot.get_page()
         roles = await obtener_todos_los_roles(page)

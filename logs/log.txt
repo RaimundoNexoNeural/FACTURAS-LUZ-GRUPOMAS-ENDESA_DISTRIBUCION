@@ -1,1 +1,212 @@
-	[2026-01-05 13:01:39] Archivo de logs vaciado.
+	[2026-01-20 16:16:35] [INFO] Carpetas de descarga configuradas en: temp_endesa_downloads
+
+[2026-01-20 16:16:39] 
+API llamada GET /facturas: Desde=01/12/2025, Hasta=31/12/2025
+
+
+[2026-01-20 16:16:39]     [INICIO] Proceso RPA Edistribución. Desde=01/12/2025, Hasta=31/12/2025
+	 ======================================== 
+
+	[2026-01-20 16:16:39] [LOGIN] Intento 1/5...
+	[2026-01-20 16:16:44] [LOGIN] Sesión establecida correctamente.
+	[2026-01-20 16:16:44] Obteniendo lista de roles disponibles...
+	    - Empresa detectada: Personal
+	    - Empresa detectada: Repr. de ANDALUZA DE SUPERMERCADOS S.L.
+	    - Empresa detectada: Repr. de APARTAMENTOS TURISTICOS MABOR S.L.
+	    - Empresa detectada: Repr. de FUNDACION MAS
+	    - Empresa detectada: Repr. de GARAMASTASUR,S.L
+	    - Empresa detectada: Repr. de GRUPO HERMANOS MARTIN S.A.
+	    - Empresa detectada: Repr. de INMOBILIARIA VITRUBIO MARGON, S.L.
+	    - Empresa detectada: Repr. de SUPERMERCADOS ALMENSILLA HNOS MARTIN S.L
+	    - Empresa detectada: Repr. de SUPERMERCADOS EL ALTOZANO SL
+	    - Empresa detectada: Repr. de SUROESTE DE SUPERMERCADOS HNOS MARTIN SL
+	[2026-01-20 16:16:47] Total de empresas válidas a procesar: 10
+
+ ========================================
+	[2026-01-20 16:16:47] PROCESANDO EMPRESA: Personal
+	 ================================================================================
+	[2026-01-20 16:16:50] [BUSQUEDA]
+	[2026-01-20 16:16:56] Filtros Aplicados. Esperando carga de tabla (Máx 60s)...
+	[2026-01-20 16:17:08]     [INFO] Sin resultados para este periodo.
+
+ ========================================
+	[2026-01-20 16:17:08] PROCESANDO EMPRESA: Repr. de ANDALUZA DE SUPERMERCADOS S.L.
+	 ================================================================================
+	[2026-01-20 16:17:38] [ERROR] Fallo en ROL Repr. de ANDALUZA DE SUPERMERCADOS S.L.: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("button[title=\"Cambio de rol\"]")
+    - locator resolved to <button type="button" name="wp-menu" title="Cambio de rol" data-aura-rendered-by="237:0" class="slds-button wp-role slds-align_absolute-center slds-m-vertical_x-small slds-p-horizontal_small wp-white wp-fontsize wp-focus">…</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <section role="dialog" tabindex="-1" data-aura-rendered-by="689:0" class="slds-modal slds-fade-in-open">…</section> from <div role="main" tabindex="-1" class="cCenterPanel" data-aura-rendered-by="308:0">…</div> subtree intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <section role="dialog" tabindex="-1" data-aura-rendered-by="689:0" class="slds-modal slds-fade-in-open">…</section> from <div role="main" tabindex="-1" class="cCenterPanel" data-aura-rendered-by="308:0">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 100ms
+    56 × waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <section role="dialog" tabindex="-1" data-aura-rendered-by="689:0" class="slds-modal slds-fade-in-open">…</section> from <div role="main" tabindex="-1" class="cCenterPanel" data-aura-rendered-by="308:0">…</div> subtree intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+
+
+ ========================================
+	[2026-01-20 16:17:38] PROCESANDO EMPRESA: Repr. de APARTAMENTOS TURISTICOS MABOR S.L.
+	 ================================================================================
+	[2026-01-20 16:18:08] [ERROR] Fallo en ROL Repr. de APARTAMENTOS TURISTICOS MABOR S.L.: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("button[title=\"Cambio de rol\"]")
+    - locator resolved to <button type="button" name="wp-menu" title="Cambio de rol" data-aura-rendered-by="237:0" class="slds-button wp-role slds-align_absolute-center slds-m-vertical_x-small slds-p-horizontal_small wp-white wp-fontsize wp-focus">…</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <section role="dialog" tabindex="-1" data-aura-rendered-by="689:0" class="slds-modal slds-fade-in-open">…</section> from <div role="main" tabindex="-1" class="cCenterPanel" data-aura-rendered-by="308:0">…</div> subtree intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <section role="dialog" tabindex="-1" data-aura-rendered-by="689:0" class="slds-modal slds-fade-in-open">…</section> from <div role="main" tabindex="-1" class="cCenterPanel" data-aura-rendered-by="308:0">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 100ms
+    56 × waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <section role="dialog" tabindex="-1" data-aura-rendered-by="689:0" class="slds-modal slds-fade-in-open">…</section> from <div role="main" tabindex="-1" class="cCenterPanel" data-aura-rendered-by="308:0">…</div> subtree intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+
+
+ ========================================
+	[2026-01-20 16:18:08] PROCESANDO EMPRESA: Repr. de FUNDACION MAS
+	 ================================================================================
+	[2026-01-20 16:18:38] [ERROR] Fallo en ROL Repr. de FUNDACION MAS: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("button[title=\"Cambio de rol\"]")
+    - locator resolved to <button type="button" name="wp-menu" title="Cambio de rol" data-aura-rendered-by="237:0" class="slds-button wp-role slds-align_absolute-center slds-m-vertical_x-small slds-p-horizontal_small wp-white wp-fontsize wp-focus">…</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <section role="dialog" tabindex="-1" data-aura-rendered-by="689:0" class="slds-modal slds-fade-in-open">…</section> from <div role="main" tabindex="-1" class="cCenterPanel" data-aura-rendered-by="308:0">…</div> subtree intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <section role="dialog" tabindex="-1" data-aura-rendered-by="689:0" class="slds-modal slds-fade-in-open">…</section> from <div role="main" tabindex="-1" class="cCenterPanel" data-aura-rendered-by="308:0">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 100ms
+    56 × waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <section role="dialog" tabindex="-1" data-aura-rendered-by="689:0" class="slds-modal slds-fade-in-open">…</section> from <div role="main" tabindex="-1" class="cCenterPanel" data-aura-rendered-by="308:0">…</div> subtree intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+
+
+ ========================================
+	[2026-01-20 16:18:38] PROCESANDO EMPRESA: Repr. de GARAMASTASUR,S.L
+	 ================================================================================
+	[2026-01-20 16:19:08] [ERROR] Fallo en ROL Repr. de GARAMASTASUR,S.L: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("button[title=\"Cambio de rol\"]")
+    - locator resolved to <button type="button" name="wp-menu" title="Cambio de rol" data-aura-rendered-by="237:0" class="slds-button wp-role slds-align_absolute-center slds-m-vertical_x-small slds-p-horizontal_small wp-white wp-fontsize wp-focus">…</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <section role="dialog" tabindex="-1" data-aura-rendered-by="689:0" class="slds-modal slds-fade-in-open">…</section> from <div role="main" tabindex="-1" class="cCenterPanel" data-aura-rendered-by="308:0">…</div> subtree intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <section role="dialog" tabindex="-1" data-aura-rendered-by="689:0" class="slds-modal slds-fade-in-open">…</section> from <div role="main" tabindex="-1" class="cCenterPanel" data-aura-rendered-by="308:0">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 100ms
+    56 × waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <section role="dialog" tabindex="-1" data-aura-rendered-by="689:0" class="slds-modal slds-fade-in-open">…</section> from <div role="main" tabindex="-1" class="cCenterPanel" data-aura-rendered-by="308:0">…</div> subtree intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+
+
+ ========================================
+	[2026-01-20 16:19:08] PROCESANDO EMPRESA: Repr. de GRUPO HERMANOS MARTIN S.A.
+	 ================================================================================
+	[2026-01-20 16:19:16] [ERROR] Fallo en ROL Repr. de GRUPO HERMANOS MARTIN S.A.: Locator.click: Target page, context or browser has been closed
+Call log:
+  - waiting for locator("button[title=\"Cambio de rol\"]")
+    - locator resolved to <button type="button" name="wp-menu" title="Cambio de rol" data-aura-rendered-by="237:0" class="slds-button wp-role slds-align_absolute-center slds-m-vertical_x-small slds-p-horizontal_small wp-white wp-fontsize wp-focus">…</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <section role="dialog" tabindex="-1" data-aura-rendered-by="689:0" class="slds-modal slds-fade-in-open">…</section> from <div role="main" tabindex="-1" class="cCenterPanel" data-aura-rendered-by="308:0">…</div> subtree intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <section role="dialog" tabindex="-1" data-aura-rendered-by="689:0" class="slds-modal slds-fade-in-open">…</section> from <div role="main" tabindex="-1" class="cCenterPanel" data-aura-rendered-by="308:0">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 100ms
+    13 × waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <section role="dialog" tabindex="-1" data-aura-rendered-by="689:0" class="slds-modal slds-fade-in-open">…</section> from <div role="main" tabindex="-1" class="cCenterPanel" data-aura-rendered-by="308:0">…</div> subtree intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+    - waiting for element to be visible, enabled and stable
+
+
+ ========================================
+	[2026-01-20 16:19:16] PROCESANDO EMPRESA: Repr. de INMOBILIARIA VITRUBIO MARGON, S.L.
+	 ================================================================================
+	[2026-01-20 16:19:16] [ERROR] Fallo en ROL Repr. de INMOBILIARIA VITRUBIO MARGON, S.L.: Locator.click: Target page, context or browser has been closed
+
+ ========================================
+	[2026-01-20 16:19:16] PROCESANDO EMPRESA: Repr. de SUPERMERCADOS ALMENSILLA HNOS MARTIN S.L
+	 ================================================================================
+	[2026-01-20 16:19:16] [ERROR] Fallo en ROL Repr. de SUPERMERCADOS ALMENSILLA HNOS MARTIN S.L: Locator.click: Target page, context or browser has been closed
+
+ ========================================
+	[2026-01-20 16:19:16] PROCESANDO EMPRESA: Repr. de SUPERMERCADOS EL ALTOZANO SL
+	 ================================================================================
+	[2026-01-20 16:19:16] [ERROR] Fallo en ROL Repr. de SUPERMERCADOS EL ALTOZANO SL: Locator.click: Target page, context or browser has been closed
+
+ ========================================
+	[2026-01-20 16:19:16] PROCESANDO EMPRESA: Repr. de SUROESTE DE SUPERMERCADOS HNOS MARTIN SL
+	 ================================================================================
+	[2026-01-20 16:19:16] [ERROR] Fallo en ROL Repr. de SUROESTE DE SUPERMERCADOS HNOS MARTIN SL: Locator.click: Target page, context or browser has been closed
+	[2026-01-20 16:19:16] [OK][FIN] Proceso completado. Total facturas: 0
+	[2026-01-20 16:19:16] [SISTEMA] Navegador cerrado.
+
+	[2026-01-20 16:19:16] 
+[API] ÉXITO: 0 facturas procesadas.
+
