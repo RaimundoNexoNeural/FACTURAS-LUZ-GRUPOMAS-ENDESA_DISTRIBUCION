@@ -24,7 +24,7 @@ class NavegadorAsync:
         self.playwright = await async_playwright().start()
         
         # En preproducción usamos headless=False (visual)
-        self.browser = await self.playwright.chromium.launch(headless=False) 
+        self.browser = await self.playwright.chromium.launch(headless=True) 
         
         # Creamos un nuevo contexto de navegador CON el directorio de descarga configurado
         self.context = await self.browser.new_context(
